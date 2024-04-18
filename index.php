@@ -95,26 +95,26 @@ class novin_credit_manager
         $result['is_enough'] = false;
         $result['steps'] = array();
         $company_credit_percent = $this->get_company_percent('credit');
-        //  var_dump( $company_credit_percent);
         $company_cheque_percent = $this->get_company_percent('cheque');
-        // var_dump($company_cheque_percent);
         $company_max_cheque_price = $this->get_company_max_cheque_price();
         $total_credit_price = 0;
         $total_cheque_price = 0;
         $total_cheque_price_without_commission = 0;
         $total_cheque_commission = 0;
         $total_cheque_discount = 0;
+        $order_type = '';
+        $discount_code_amount = 0;
         $label = 'روش خرید';
         $index = 'attribute_' . sanitize_title($label);
         $coupons = WC()->cart->get_applied_coupons();
         $coupon_percent = 0;
 
-        $order_type = '';
-        $discount_code_amount = 0;
         foreach ( WC()->cart->get_coupons() as $code => $coupon ){
-            $discount_code_amount +=	WC()->cart->get_coupon_discount_amount( $coupon->get_code(), WC()->cart->display_cart_ex_tax ) ;
-        }
 
+            $discount_code_amount +=	WC()->cart->get_coupon_discount_amount( $coupon->get_code(), WC()->cart->display_cart_ex_tax ) ;
+
+
+        }
         if (count($coupons) > 0) {
             foreach ($coupons as $coupon_code) {
                 $coupon = new WC_Coupon($coupon_code);
@@ -123,6 +123,7 @@ class novin_credit_manager
                 }
             }
         }
+
         foreach ($cart->get_cart() as $item) {
             if (isset($item['variation'])) {
                 if ($item['variation'][$index] === 'اعتباری') {
@@ -130,22 +131,20 @@ class novin_credit_manager
                     $total_credit_price += um_add_nine_percent($item['data']->get_price()) * $item['quantity'];
                 }
                 if ($item['variation'][$index] === 'چک') {
+                    $order_type = 'cheque';
                     $item_price=$item['data']->get_price() * $item['quantity'];
                     $total_cheque_price_without_commission += $item_price;
-                    $total_cheque_discount= ($coupon_percent / 100) * $item_price;
+                    $total_cheque_discount= ( $discount_code_amount / 100) * $item_price;
                 }
             }
         }
         $price_with_discount = $total_cheque_price_without_commission - $total_cheque_discount;
         $min_cash=  $price_with_discount * ($company_cheque_percent / 100);
 
-        $result['total_cheque_price_raw'] = $total_cheque_price_without_commission;
+        $result['total_cheque_price_raw'] = $total_cheque_price_without_commission;// $total_cheque_price;
         $result['total_cheque_price_raw_without_commission'] = $total_cheque_price_without_commission;
         $total_credit_price = (1 - ($company_credit_percent / 100)) * $total_credit_price;
-        //  var_dump($total_credit_price);
-        $total_cheque_price = (1 - ($company_cheque_percent / 100)) * $total_cheque_price_without_commission;
-        // var_dump($total_cheque_price);
-
+        $total_cheque_price = (1 - ($company_cheque_percent / 100)) * $total_cheque_price_without_commission;//$total_cheque_price;
         $result['total_cheque_price_raw_after_cash'] = $total_cheque_price;
         $result['max_total_cheque_price'] = 100000000000;
         if ($company_max_cheque_price > 0) {
@@ -154,25 +153,22 @@ class novin_credit_manager
         if ($result['max_total_cheque_price'] < $total_cheque_price) {
             $total_cheque_price = $result['max_total_cheque_price'];
         }
-
         $result['company_cheque_percent'] = $company_cheque_percent;
         $result['cheque_commission_percent'] = $this->get_cheque_commission_percent();
-        $result['total_credit_price'] = max($total_credit_price - $discount_code_amount ,0);// $total_credit_price;
+        $result['total_credit_price'] = $total_credit_price;// max($total_credit_price - $discount_code_amount ,0);
 
-        ///eli
         $total_price_by_commission = $price_with_discount - $min_cash;
         $total_cheque_price_commission_vat = $total_price_by_commission * ($this->get_cheque_commission_percent()/100);
         $result['total_cheque_price_commission_vat'] = $total_cheque_price_commission_vat;
         $total_cheque_price_by_commission = $total_price_by_commission + $total_cheque_price_commission_vat;
         $result['total_cheque_price_by_commission'] = $total_cheque_price_by_commission;
 
-        
         $cheque_price_with_vat=um_add_nine_percent($price_with_discount - $min_cash);
         $total_cheque_commission =$cheque_price_with_vat * ($this->get_cheque_commission_percent()/100) ;
         $cheque_price_with_commission_and_vat=$cheque_price_with_vat + $total_cheque_commission;
 
-        $result['total_cheque_commission'] = $total_cheque_commission;
-        $result['total_cheque_price_with_commission'] = $cheque_price_with_commission_and_vat;
+        $result['total_cheque_commission'] = $total_cheque_commission;//$result['total_cheque_price_raw'] - $result['total_cheque_price_raw_without_commission'];
+        $result['total_cheque_price_with_commission'] = $cheque_price_with_commission_and_vat;//$result['total_cheque_price_raw'];
         if($item['variation'][$index] === 'چک'){
             
             $result['total_cash_price'] =  $min_cash - $total_credit_price;
@@ -180,10 +176,9 @@ class novin_credit_manager
         if($item['variation'][$index] === 'نقدی' || $item['variation'][$index] === 'اعتباری'){
             $result['total_cash_price'] = max(($cart->total + $result['total_cheque_commission'] ) - $total_credit_price - $min_cash ,0);
         }
-       
-        // var_dump( $result['total_cash_price']);
-        $result['total_cheque_price'] = $cheque_price_with_vat;//$total_cheque_price;
-        
+
+        $result['total_cheque_price'] = $cheque_price_with_vat;// $total_cheque_price;
+
         $sources = $this->get_user_sources();
         if (is_array($sources) && count($sources) > 0) {
             foreach ($sources as $key => $amount) {
@@ -206,37 +201,38 @@ class novin_credit_manager
                 $sub_credit += $step['sub'];
             }
             $result['sub_credit'] = $sub_credit;
-
         } else {
             $result['sub_credit'] = 0;
-            
         }
         $result['total_credit_price_raw'] = $result['sub_credit'] + $result['total_credit_price'];
         $result['total_cash_price_raw'] = $result['total_cash_price'];
         $result['total_cash_price'] = $result['total_cash_price'] + $result['total_credit_price'];
-
+        
 
         $mellat_cash = $this->get_user_cash();
         $result['update'] = $mellat_cash;
         $lendtech_cash = $this->get_user_cash_lendtech();
         $result['update_lendtech'] = $lendtech_cash;
 
-        // $total_discount = $cart->get_cart_discount_total();
-        // $continue = true;
+        //$total_discount = $cart->get_cart_discount_total();
+        //$continue = true;
         $sub = 0;
         $lendtech_sub = 0;
-        $remaining = $result['total_cash_price'] - $lendtech_cash;
+        $remaining = $result['total_cash_price'] ??0;
+        if ($result['sub_credit'] <= 0) {
+            $remaining = $result['total_cash_price'] - $lendtech_cash ;
 
-        $continue = true;
-        if ($remaining <= 0) {
-            $lendtech_sub = $result['total_cash_price'];
-            $result['update_lendtech'] = $lendtech_cash - $result['total_cash_price'];
-            $result['total'] = 0;
-            $continue = false;
-        } else {
-            $lendtech_sub = $lendtech_cash;
-            $result['update_lendtech'] = 0;
-            $result['total'] = $remaining;
+            if ($remaining <= 0) {
+
+                $lendtech_sub = $result['total_cash_price'];
+                $result['update_lendtech'] = $lendtech_cash - $result['total_cash_price'];
+                $result['total'] = 0;
+                $continue = false;
+            } else {
+                $lendtech_sub = $lendtech_cash;
+                $result['update_lendtech'] = 0;
+                $result['total'] = $remaining;
+            }
         }
 
 
@@ -253,8 +249,10 @@ class novin_credit_manager
                 $result['total'] = $remaining_total - $mellat_cash;
             }
         }
+
         $result['sub_cash'] = $sub;
         $result['lendtech_sub'] = $lendtech_sub;
+
 
         $result['total_credit_price_raw'] = ceil($result['total_credit_price_raw']);
         $result['total_cash_price_raw'] = ceil($result['total_cash_price_raw']);
@@ -266,16 +264,14 @@ class novin_credit_manager
         $result['total'] = ceil($result['total']);
         $result['total_cheque_price'] = ceil($result['total_cheque_price']);
         $result['total_credit_price'] = ceil($result['total_credit_price']);
-
         $result['total_coupon_percent'] = $total_cheque_discount;//ceil($total_cheque_commission - $result['total_cheque_price_raw']);
-        // $result['success'] = 'true';
-        //echo wp_send_json($result);
-        
+
+
+
         return $result;
     }
     public function woocommerce_after_calculate_totals($cart)
     {
-        
         if (is_admin() && !defined('DOING_AJAX')) {
             return;
         }
